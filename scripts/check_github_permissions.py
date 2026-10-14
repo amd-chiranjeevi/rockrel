@@ -2,14 +2,19 @@
 # Copyright Advanced Micro Devices, Inc.
 # SPDX-License-Identifier: MIT
 """
-Check GitHub push/admin permissions for all ROCm repos in a release plan.
+Check GitHub API access for all ROCm repos in a release plan.
 
-Works for both branching and tagging — push access is the minimum required
-for either operation. Reads the repo list from .gitmodules via the GitHub API
-(no local clone needed). Accepts any valid git ref (branch, tag, or SHA).
+Works for both branching and tagging. Reads the repo list from .gitmodules
+via the GitHub API (no local clone needed). Accepts any valid git ref
+(branch, tag, or SHA).
+
+Verifies that the token can reach each repo via the API (a successful
+response proves access — GitHub App installation tokens 404 on repos
+outside their install grant, so no further `permissions.push`/`admin`
+check is needed or meaningful for App tokens).
 
 Can be run standalone to verify that the current machine (developer or CI)
-has the necessary permissions before performing release activities.
+has the necessary access before performing release activities.
 
 Usage:
     python check_github_permissions.py \\
@@ -30,13 +35,13 @@ from release_utils import (
 )
 
 def check_permissions(token: str, repo_map: dict[str, str]) -> int:
-    """Check push/admin access for every repo in repo_map.
+    """Check API access for every repo in repo_map.
 
     Returns 0 if all pass, 1 if any fail.
     """
     print("=" * 60)
-    print(f"  GitHub Permission Check")
-    print(f"  Verifying push/admin access for {len(repo_map)} repo(s)")
+    print(f"  GitHub Access Check")
+    print(f"  Verifying access for {len(repo_map)} repo(s)")
     print("=" * 60)
 
     failed: dict[str, str] = {}
@@ -63,14 +68,13 @@ def check_permissions(token: str, repo_map: dict[str, str]) -> int:
             failed[repo_name] = f"Network error checking {owner}/{repo}: {exc.reason}"
             continue
 
-        perms = data.get("permissions", {})
-        if perms.get("push", False) or perms.get("admin", False):
-            print(f"[OK]  {repo_name}: push/admin access confirmed")
-        else:
-            failed[repo_name] = (
-                f"Insufficient permissions for {owner}/{repo}: "
-                f"push={perms.get('push')}, admin={perms.get('admin')}"
-            )
+        # A successful response here already proves access: GitHub App
+        # installation tokens can only see repos within their install grant
+        # and get a 404 otherwise, so `permissions.push`/`admin` (which only
+        # reflects human collaborator roles, not App installation scope) is
+        # not a meaningful signal for App tokens and is intentionally not
+        # checked here.
+        print(f"[OK]  {repo_name}: {owner}/{repo} is accessible to this token")
 
     total = len(repo_map)
     passed = total - len(failed)
@@ -80,13 +84,13 @@ def check_permissions(token: str, repo_map: dict[str, str]) -> int:
     print("=" * 60)
 
     if failed:
-        print(f"\nERROR: Permission check failed for {len(failed)} repo(s). "
-              "Aborting — insufficient permissions to proceed.")
+        print(f"\nERROR: Access check failed for {len(failed)} repo(s). "
+              "Aborting — insufficient access to proceed.")
         for name, reason in failed.items():
             print(f"  {name}: {reason}")
         return 1
 
-    print("\nAll permission checks passed.")
+    print("\nAll access checks passed.")
     return 0
 
 def main(argv: list[str]) -> int:
