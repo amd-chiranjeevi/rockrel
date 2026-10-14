@@ -484,6 +484,17 @@ class RockBranchingAutomation:
             ["git", "reset", "--hard", rock_commit], cwd=clone_dir
         )
 
+        requirements_file = clone_dir / "requirements.txt"
+        if requirements_file.exists():
+            self.log(f"Installing TheRock requirements from {requirements_file}")
+            self.run_command(
+                [sys.executable, "-m", "pip", "install", "-r", str(requirements_file)],
+                cwd=clone_dir,
+                stream=True,
+            )
+        else:
+            self.log(f"No requirements.txt found at {requirements_file}; skipping install")
+
         if fetch_script.exists():
             self.log(
                 "Updating submodules via fetch_sources.py "
