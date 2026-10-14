@@ -10,7 +10,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ROCK_URL = "https://github.com/ROCm/TheRock.git"
+REPOSITORY = "amd-chiranjeevi/TheROCk"
+ROCK_URL = f"https://github.com/{REPOSITORY}.git"
 GITHUB_API = "https://api.github.com"
 
 def get_gh_token() -> str:
@@ -64,7 +65,7 @@ def fetch_repo_map(token: str, commitid: str, exclude_list: set[str]) -> dict[st
     No local clone required. Filters to ROCm org repos only.
     Accepts any valid git ref (branch, tag, or SHA).
     """
-    api_url = f"{GITHUB_API}/repos/ROCm/TheRock/contents/.gitmodules?ref={commitid}"
+    api_url = f"{GITHUB_API}/repos/{REPOSITORY}/contents/.gitmodules?ref={commitid}"
     try:
         data = _api_request(api_url, token)
     except urllib.error.HTTPError as exc:

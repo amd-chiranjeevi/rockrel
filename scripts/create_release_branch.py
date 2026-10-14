@@ -49,6 +49,7 @@ Options:
         --dry-run/--no-dry-run
                          Log actions without pushing to remotes (default: enabled)
         --exclude-list   Submodule repo names to skip (space-separated)
+        --include-list   If set, only these repo names are branched (space-separated)
         --force-clone    Delete and reclone if cache dir is not a valid git repo
         --cache-dir      Directory to cache the TheRock clone
                          (default: /tmp/rock-branching-cache)
@@ -64,6 +65,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from pprint import pformat
+
+from release_utils import ROCK_URL
 
 
 @dataclass
@@ -91,11 +94,12 @@ class RockBranchingAutomation:
             )
 
         self.exclude_list: set[str] = set(cli_args.exclude_list or [])
+        self.include_list: set[str] = set(cli_args.include_list or [])
         self.force_clone: bool = cli_args.force_clone
         self.cache_dir: Path | None = (
             Path(cli_args.cache_dir) if cli_args.cache_dir else None
         )
-        self.rock_url: str = "https://github.com/ROCm/TheRock.git"
+        self.rock_url: str = ROCK_URL
         self.cache_root: Path | None = None
 
         self._logger = logging.getLogger("rock_branching")
@@ -104,6 +108,8 @@ class RockBranchingAutomation:
         self.log(f"Dry run mode = {self.dry_run}")
         if self.exclude_list:
             self.log(f"Exclude list: {self.exclude_list}")
+        if self.include_list:
+            self.log(f"Include list (only these repos will be branched): {self.include_list}")
 
     def log(self, msg: str) -> None:
         """Log an info-level message."""
@@ -546,6 +552,10 @@ class RockBranchingAutomation:
                 self.log(f"Skipping {repo_name} (in exclude list)")
                 continue
 
+            if self.include_list and repo_name not in self.include_list:
+                self.log(f"Skipping {repo_name} (not in include list)")
+                continue
+
             url_lower = repo_url.lower()
             if (
                 "github.com/rocm/" not in url_lower
@@ -563,11 +573,14 @@ class RockBranchingAutomation:
                 path=clone_dir / path,
             )
 
-        plan["TheRock"] = RepoInfo(
-            url=self.rock_url,
-            commit=rock_commit,
-            path=clone_dir,
-        )
+        if "TheRock" not in self.exclude_list and (
+            not self.include_list or "TheRock" in self.include_list
+        ):
+            plan["TheRock"] = RepoInfo(
+                url=self.rock_url,
+                commit=rock_commit,
+                path=clone_dir,
+            )
 
         return plan
 
@@ -611,6 +624,12 @@ def main(argv: list[str]) -> int:
         nargs="*",
         default=[],
         help="List of submodule repo names to exclude from branching",
+    )
+    parser.add_argument(
+        "--include-list",
+        nargs="*",
+        default=[],
+        help="If set, only these repo names will be branched (all others skipped)",
     )
     parser.add_argument(
         "--force-clone",

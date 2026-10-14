@@ -108,12 +108,21 @@ def main(argv: list[str]) -> int:
         default=[],
         help="Repo names to skip",
     )
+    parser.add_argument(
+        "--include-list",
+        nargs="*",
+        default=[],
+        help="If set, only check these repo names (all others skipped)",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     token = get_gh_token()
     repo_map = fetch_repo_map(token, args.commitid, set(args.exclude_list))
+    if args.include_list:
+        include = set(args.include_list)
+        repo_map = {name: url for name, url in repo_map.items() if name in include}
     return check_permissions(token, repo_map)
 
 if __name__ == "__main__":

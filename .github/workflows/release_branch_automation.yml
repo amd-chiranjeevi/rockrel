@@ -30,6 +30,10 @@ on:
         description: "(Optional) Space-separated repo names to skip"
         type: string
         default: ""
+      include_list:
+        description: "(Optional) Space-separated repo names to restrict branching to (all others skipped)"
+        type: string
+        default: "TheRock"
 
 permissions:
   contents: read
@@ -66,7 +70,8 @@ jobs:
         run: |
           python check_github_permissions.py \
             --commitid "${{ inputs.commitid }}" \
-            --exclude-list ${{ inputs.exclude_list }}
+            --exclude-list ${{ inputs.exclude_list }} \
+            --include-list ${{ inputs.include_list }}
 
   create_branches:
     name: Create and Push Release Branches
@@ -98,6 +103,7 @@ jobs:
             --branch-name "${{ inputs.branch_name }}" \
             --commitid "${{ inputs.commitid }}" \
             --exclude-list ${{ inputs.exclude_list }} \
+            --include-list ${{ inputs.include_list }} \
             --cache-dir "${RUNNER_TEMP}/rock-branching-cache" \
             --github-token "${{ steps.app-token.outputs.token }}" \
             --no-dry-run
@@ -138,9 +144,12 @@ jobs:
           branch_name = "${{ inputs.branch_name }}"
           commitid = "${{ inputs.commitid }}"
           exclude = set("${{ inputs.exclude_list }}".split())
+          include = set("${{ inputs.include_list }}".split())
 
           token = os.environ["GH_TOKEN"]
           repo_map = fetch_repo_map(token, commitid, exclude)
+          if include:
+              repo_map = {name: url for name, url in repo_map.items() if name in include}
 
           failed = []
           for repo_name, url in repo_map.items():
