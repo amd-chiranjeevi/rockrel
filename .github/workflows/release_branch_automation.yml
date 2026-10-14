@@ -1,0 +1,157 @@
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
+
+name: Release Branch Automation
+
+# Creates release branches for TheRock and every tracked ROCm submodule.
+#
+# Flow:
+#   1. check_permissions - read-only, no clone. Verifies the GitHub token has
+#      push/admin access to every repo in the plan. Runs automatically.
+#   2. (approval gate) - a required reviewer on the "release-branching"
+#      environment reviews job 1's output before job 3 is allowed to start.
+#   3. create_branches  - clones TheRock, creates and pushes the release
+#      branch across all tracked submodules. Only runs after approval.
+#   4. verify            - confirms every pushed branch exists on the remote
+#      at the expected commit.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch_name:
+        description: "Release branch name to create, e.g. release/therock-7.15"
+        type: string
+        required: true
+      commitid:
+        description: "TheRock git ref (branch, tag, or SHA) to branch from"
+        type: string
+        required: true
+      exclude_list:
+        description: "(Optional) Space-separated repo names to skip"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+run-name: >-
+  Release Branch Automation (${{ inputs.branch_name }} @ ${{ inputs.commitid }})
+
+jobs:
+  check_permissions:
+    name: Check GitHub Permissions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: scripts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.1.7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5.5.0
+        with:
+          python-version: "3.12"
+
+      - name: Authenticate gh CLI
+        env:
+          GH_TOKEN: ${{ secrets.ROCKREL_RELEASE_GH_TOKEN }}
+        run: echo "${GH_TOKEN}" | gh auth login --with-token
+
+      - name: Check GitHub push/admin permissions
+        run: |
+          python check_github_permissions.py \
+            --commitid "${{ inputs.commitid }}" \
+            --exclude-list ${{ inputs.exclude_list }}
+
+  create_branches:
+    name: Create and Push Release Branches
+    needs: check_permissions
+    environment: release-branching
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: scripts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.1.7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5.5.0
+        with:
+          python-version: "3.12"
+
+      - name: Authenticate gh CLI
+        env:
+          GH_TOKEN: ${{ secrets.ROCKREL_RELEASE_GH_TOKEN }}
+        run: echo "${GH_TOKEN}" | gh auth login --with-token
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.ROCKREL_RELEASE_SSH_KEY }}
+
+      - name: Add github.com to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+
+      - name: Create and push release branches
+        run: |
+          python create_release_branch.py \
+            --branch-name "${{ inputs.branch_name }}" \
+            --commitid "${{ inputs.commitid }}" \
+            --exclude-list ${{ inputs.exclude_list }} \
+            --cache-dir "${RUNNER_TEMP}/rock-branching-cache" \
+            --no-dry-run
+
+  verify:
+    name: Verify Pushed Branches
+    needs: create_branches
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: scripts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.1.7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v5.5.0
+        with:
+          python-version: "3.12"
+
+      - name: Authenticate gh CLI
+        env:
+          GH_TOKEN: ${{ secrets.ROCKREL_RELEASE_GH_TOKEN }}
+        run: echo "${GH_TOKEN}" | gh auth login --with-token
+
+      - name: Verify release branch exists on every repo
+        run: |
+          python - <<'EOF'
+          import sys
+          from release_utils import fetch_repo_map, get_gh_token, run_command
+          from pathlib import Path
+
+          branch_name = "${{ inputs.branch_name }}"
+          commitid = "${{ inputs.commitid }}"
+          exclude = set("${{ inputs.exclude_list }}".split())
+
+          token = get_gh_token()
+          repo_map = fetch_repo_map(token, commitid, exclude)
+
+          failed = []
+          for repo_name, url in repo_map.items():
+              output = run_command(
+                  ["git", "ls-remote", "--heads", url, branch_name],
+                  cwd=Path.cwd(),
+                  capture=True,
+              )
+              if output:
+                  print(f"[OK]   {repo_name}: branch '{branch_name}' exists")
+              else:
+                  print(f"[FAIL] {repo_name}: branch '{branch_name}' not found")
+                  failed.append(repo_name)
+
+          if failed:
+              print(f"\n{len(failed)} repo(s) missing the release branch: {failed}")
+              sys.exit(1)
+          print("\nAll repos verified.")
+          EOF
