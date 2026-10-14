@@ -54,11 +54,11 @@ jobs:
 
       - name: Generate GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@c1a285145b9d317df6ced56c09f525b5c2b6f6b # v2.0.6
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.ROCKREL_RELEASE_APP_ID }}
           private-key: ${{ secrets.ROCKREL_RELEASE_APP_PRIVATE_KEY }}
-          owner: ROCm
+          owner: amd-chiranjeevi
 
       - name: Check GitHub push/admin permissions
         env:
@@ -86,11 +86,11 @@ jobs:
 
       - name: Generate GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@c1a285145b9d317df6ced56c09f525b5c2b6f6b # v2.0.6
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.ROCKREL_RELEASE_APP_ID }}
           private-key: ${{ secrets.ROCKREL_RELEASE_APP_PRIVATE_KEY }}
-          owner: ROCm
+          owner: amd-chiranjeevi
 
       - name: Create and push release branches
         run: |
@@ -119,11 +119,11 @@ jobs:
 
       - name: Generate GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@c1a285145b9d317df6ced56c09f525b5c2b6f6b # v2.0.6
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.ROCKREL_RELEASE_APP_ID }}
           private-key: ${{ secrets.ROCKREL_RELEASE_APP_PRIVATE_KEY }}
-          owner: ROCm
+          owner: amd-chiranjeevi
 
       - name: Verify release branch exists on every repo
         env:
