@@ -10,8 +10,8 @@ caller-provided commit. The script maintains a cached clone (configurable via
 `--cache-dir`, default: `/tmp/rock-branching-cache`), fetches the latest refs,
 and hard-resets to the specified commit before creating release branches.
 
-Authentication is done via SSH. Remotes are configured via
-`git remote set-url` (with `add` fallback).
+Authentication is done via an HTTPS GitHub token (x-access-token). Remotes
+are configured via `git remote set-url` (with `add` fallback).
 
 High-level workflow:
 1. Reuse (or populate) the cached TheRock clone; reclone only when the cache
@@ -25,7 +25,7 @@ High-level workflow:
     plus TheRock itself. Repos listed in `--exclude-list` and repos outside
     the ROCm GitHub org are filtered out.
 4. For each component:
-    a. Set up the SSH `rocm-github` remote.
+    a. Set up the `rocm-github` remote with a token-authenticated HTTPS URL.
     b. Check if the release branch already exists on the remote; if so, skip
        the repo entirely (recorded as skipped, not a failure).
     c. Create (or reset) the branch at the recorded commit.
@@ -39,11 +39,13 @@ Usage:
         python create_release_branch.py \\
                 --branch-name <release-branch> \\
                 --commitid <rock-commit-sha> \\
+                --github-token <token> \\
                 [--no-dry-run]
 
 Options:
         --branch-name    Name of the release branch to create (required)
         --commitid       Commit SHA of TheRock to branch from (required)
+        --github-token   GitHub token with push access, used for HTTPS auth (required)
         --dry-run/--no-dry-run
                          Log actions without pushing to remotes (default: enabled)
         --exclude-list   Submodule repo names to skip (space-separated)
@@ -80,6 +82,7 @@ class RockBranchingAutomation:
         self.release_branch: str = cli_args.branch_name
         self.dry_run: bool = cli_args.dry_run
         self.commitid: str = cli_args.commitid
+        self.github_token: str = cli_args.github_token
 
         if not re.fullmatch(r"[0-9a-f]{40}", self.commitid):
             raise SystemExit(
@@ -97,7 +100,7 @@ class RockBranchingAutomation:
 
         self._logger = logging.getLogger("rock_branching")
 
-        self.log("Authentication Mode: SSH")
+        self.log("Authentication Mode: HTTPS token")
         self.log(f"Dry run mode = {self.dry_run}")
         if self.exclude_list:
             self.log(f"Exclude list: {self.exclude_list}")
@@ -218,7 +221,7 @@ class RockBranchingAutomation:
 
     def _setup_remote(self, url: str, repo_dir: Path) -> None:
         """Add or update the rocm-github remote for a repo."""
-        remote_url = self.convert_to_ssh(url)
+        remote_url = self.convert_to_authenticated_url(url)
         try:
             self.run_command(
                 ["git", "remote", "set-url", "rocm-github", remote_url],
@@ -268,7 +271,7 @@ class RockBranchingAutomation:
         """Execute the branching plan for every repo in *plan*.
 
         For each repo:
-        1. Set up the ``rocm-github`` remote with the SSH URL.
+        1. Set up the ``rocm-github`` remote with a token-authenticated HTTPS URL.
         2. Guard against a pre-existing remote branch (recorded as skipped, not failed, if found).
         3. Create (or reset) the release branch at the recorded commit SHA.
         4. Push to ``rocm-github`` (skipped in dry-run mode).
@@ -335,11 +338,12 @@ class RockBranchingAutomation:
         if failed_repos:
             self.log(f"Failed repos: {pformat(failed_repos)}")
 
-    def convert_to_ssh(self, url: str) -> str:
-        """Convert https://github.com/X/Y.git to git@github.com:X/Y.git."""
+    def convert_to_authenticated_url(self, url: str) -> str:
+        """Convert https://github.com/X/Y.git to an HTTPS URL with an
+        embedded GitHub token (x-access-token)."""
         if url.startswith("https://github.com/"):
             path = url.replace("https://github.com/", "")
-            return f"git@github.com:{path}"
+            return f"https://x-access-token:{self.github_token}@github.com/{path}"
         return url
 
     def get_submodule_url_map(self, repo_dir: Path) -> dict[str, str]:
@@ -590,6 +594,11 @@ def main(argv: list[str]) -> int:
         "--commitid",
         required=True,
         help="Commit ID of TheRock to branch from",
+    )
+    parser.add_argument(
+        "--github-token",
+        required=True,
+        help="GitHub token with push access, used for HTTPS auth",
     )
     parser.add_argument(
         "--dry-run",

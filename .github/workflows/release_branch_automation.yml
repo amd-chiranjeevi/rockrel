@@ -52,12 +52,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Authenticate gh CLI
-        env:
-          GH_TOKEN: ${{ secrets.ROCKREL_RELEASE_GH_TOKEN }}
-        run: echo "${GH_TOKEN}" | gh auth login --with-token
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@c1a285145b9d317df6ced56c09f525b5c2b6f6b # v2.0.6
+        with:
+          app-id: ${{ secrets.ROCKREL_RELEASE_APP_ID }}
+          private-key: ${{ secrets.ROCKREL_RELEASE_APP_PRIVATE_KEY }}
+          owner: ROCm
 
       - name: Check GitHub push/admin permissions
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           python check_github_permissions.py \
             --commitid "${{ inputs.commitid }}" \
@@ -79,20 +84,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Authenticate gh CLI
-        env:
-          GH_TOKEN: ${{ secrets.ROCKREL_RELEASE_GH_TOKEN }}
-        run: echo "${GH_TOKEN}" | gh auth login --with-token
-
-      - name: Set up SSH
-        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@c1a285145b9d317df6ced56c09f525b5c2b6f6b # v2.0.6
         with:
-          ssh-private-key: ${{ secrets.ROCKREL_RELEASE_SSH_KEY }}
-
-      - name: Add github.com to known_hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+          app-id: ${{ secrets.ROCKREL_RELEASE_APP_ID }}
+          private-key: ${{ secrets.ROCKREL_RELEASE_APP_PRIVATE_KEY }}
+          owner: ROCm
 
       - name: Create and push release branches
         run: |
@@ -101,6 +99,7 @@ jobs:
             --commitid "${{ inputs.commitid }}" \
             --exclude-list ${{ inputs.exclude_list }} \
             --cache-dir "${RUNNER_TEMP}/rock-branching-cache" \
+            --github-token "${{ steps.app-token.outputs.token }}" \
             --no-dry-run
 
   verify:
@@ -118,23 +117,29 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Authenticate gh CLI
-        env:
-          GH_TOKEN: ${{ secrets.ROCKREL_RELEASE_GH_TOKEN }}
-        run: echo "${GH_TOKEN}" | gh auth login --with-token
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@c1a285145b9d317df6ced56c09f525b5c2b6f6b # v2.0.6
+        with:
+          app-id: ${{ secrets.ROCKREL_RELEASE_APP_ID }}
+          private-key: ${{ secrets.ROCKREL_RELEASE_APP_PRIVATE_KEY }}
+          owner: ROCm
 
       - name: Verify release branch exists on every repo
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           python - <<'EOF'
+          import os
           import sys
-          from release_utils import fetch_repo_map, get_gh_token, run_command
+          from release_utils import fetch_repo_map, run_command
           from pathlib import Path
 
           branch_name = "${{ inputs.branch_name }}"
           commitid = "${{ inputs.commitid }}"
           exclude = set("${{ inputs.exclude_list }}".split())
 
-          token = get_gh_token()
+          token = os.environ["GH_TOKEN"]
           repo_map = fetch_repo_map(token, commitid, exclude)
 
           failed = []
